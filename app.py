@@ -6,10 +6,10 @@ import pandas as pd
 from shapely.geometry import Point, Polygon
 
 # === KONFIGURASI HALAMAN ===
-st.set_page_config(page_title="KMZ Point to Polygon Processing", layout="centered")
+st.set_page_config(page_title="KMZ Point to Polygon Processing", layout="wide")
 
-st.title("🗺️ Pemrosesan Spatial Join Point ke Polygon (KMZ)")
-st.write("Unggah file KMZ Anda untuk mendeteksi titik di dalam polygon secara otomatis.")
+st.title("🗺️ Pemrosesan Spatial Join & Rekapitulasi Point ke Polygon (KMZ)")
+st.write("Unggah file KMZ Anda untuk mendeteksi titik di dalam polygon dan menghitung Total HP secara otomatis.")
 
 # === FUNGSI PARSER KML ===
 def parse_kml_hierarchy(kml_path):
@@ -84,7 +84,8 @@ if uploaded_file is not None:
     temp_folder = "temp_kmz"
     os.makedirs(temp_folder, exist_ok=True)
     kml_file = "doc.kml"
-    output_csv = "hasil_point_polygon.csv"
+    output_csv_detail = "hasil_point_polygon_detail.csv"
+    output_csv_summary = "ringkasan_total_hp.csv"
     kml_path = os.path.join(temp_folder, kml_file)
 
     with st.spinner("Mengekstrak dan memproses file KMZ..."):
@@ -102,7 +103,7 @@ if uploaded_file is not None:
                 elif not point_list:
                     st.error("❌ Tidak ditemukan point di file KMZ.")
                 else:
-                    # PERBAIKAN: Buat ID unik berdasarkan gabungan "FDT" dan "Polygon_Name"
+                    # Buat ID unik berdasarkan FDT dan Polygon_Name
                     unique_poly_identifiers = sorted(list(set((p["FDT"], p["Polygon_Name"]) for p in polygon_list)))
                     poly_id_map = {identifier: idx + 1 for idx, identifier in enumerate(unique_poly_identifiers)}
 
@@ -114,7 +115,7 @@ if uploaded_file is not None:
                     for pt_data in point_list:
                         pt_geom = pt_data["geometry"]
                         matched_poly_name = "-"
-                        matched_poly_id = 9999999  # Dummy angka besar untuk data tak terdefinisi
+                        matched_poly_id = 9999999
                         fdt_val = "-"
 
                         for poly_data in polygon_list:
@@ -135,33 +136,36 @@ if uploaded_file is not None:
 
                     final_result = pd.DataFrame(results)
 
-                    # === URUTKAN DATA BERDASARKAN Polygon_ID ===
+                    # Urutkan berdasarkan Polygon_ID
                     final_result = final_result.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
-                    
-                    # Ubah angka dummy 9999999 menjadi kosong
                     final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 9999999 else x)
 
-                    # === MENAMBAHKAN KOLOM FORMULA EXCEL ===
+                    # === BUAT TABEL RINGKASAN TOTAL_HP (SEPERTI GAMBAR) ===
+                    valid_data = final_result[final_result["Polygon_ID"] != ""]
+                    if not valid_data.empty:
+                        summary_df = valid_data.groupby(["Polygon_Name", "Polygon_ID", "FDT"]).size().reset_index(name="Total_HP")
+                        summary_df = summary_df.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
+                    else:
+                        summary_df = pd.DataFrame(columns=["Polygon_Name", "Polygon_ID", "FDT", "Total_HP"])
+
+                    # === MENAMBAHKAN KOLOM FORMULA EXCEL KE DETAIL ===
                     g_col, h_col, i_col, j_col, k_col = [], [], [], [], []
                     
                     for idx, row in final_result.iterrows():
-                        excel_row = idx + 2 # Karena baris 1 adalah header Excel
+                        excel_row = idx + 2
                         prev_row = excel_row - 1
                         next_row = excel_row + 1
 
-                        # Rumus Kolom G
                         if idx == 0:
                             g_col.append("=1")
                         else:
                             g_col.append(f'=IF(D{excel_row}<>D{prev_row},1,G{prev_row}+1)')
 
-                        # Rumus Kolom H
                         if idx == len(final_result) - 1:
                             h_col.append("=X") 
                         else:
                             h_col.append(f'=IF(D{excel_row}=D{next_row},"","X")')
 
-                        # Kolom I, J, K 
                         i_col.append(f"=C{excel_row}")
                         j_col.append(f"=B{excel_row}")
                         k_col.append(f"=A{excel_row}")
@@ -172,20 +176,38 @@ if uploaded_file is not None:
                     final_result["Col_J"] = j_col
                     final_result["Col_K"] = k_col
 
-                    final_result.to_csv(output_csv, index=False)
+                    # Simpan file CSV
+                    final_result.to_csv(output_csv_detail, index=False)
+                    summary_df.to_csv(output_csv_summary, index=False)
 
-                    st.success("✅ Pemrosesan berhasil! Polygon_ID sekarang berlanjut terus antar folder FDT.")
-                    
-                    st.subheader("Pratinjau Hasil:")
-                    st.dataframe(final_result.head(10))
+                    st.success("✅ Pemrosesan berhasil dilakukan secara otomatis!")
 
-                    with open(output_csv, "rb") as f:
-                        st.download_button(
-                            label="📥 Unduh Hasil CSV",
-                            data=f,
-                            file_name="hasil_point_polygon.csv",
-                            mime="text/csv"
-                        )
+                    # === TAMPILAN TAB DI STREAMLIT ===
+                    tab1, tab2 = st.tabs(["📄 Tabel Detail & Rumus Excel", "📊 Tabel Ringkasan (Total HP)"])
+
+                    with tab1:
+                        st.subheader("Pratinjau Data Detail")
+                        st.dataframe(final_result.head(15), use_container_width=True)
+
+                        with open(output_csv_detail, "rb") as f:
+                            st.download_button(
+                                label="📥 Unduh CSV Detail",
+                                data=f,
+                                file_name="hasil_point_polygon_detail.csv",
+                                mime="text/csv"
+                            )
+
+                    with tab2:
+                        st.subheader("Pratinjau Ringkasan Total HP per Polygon")
+                        st.dataframe(summary_df, use_container_width=True)
+
+                        with open(output_csv_summary, "rb") as f:
+                            st.download_button(
+                                label="📥 Unduh CSV Ringkasan (Total HP)",
+                                data=f,
+                                file_name="ringkasan_total_hp.csv",
+                                mime="text/csv"
+                            )
 
         except Exception as e:
             st.error(f"Terjadi kesalahan saat memproses file: {e}")

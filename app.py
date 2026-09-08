@@ -1,14 +1,72 @@
 import streamlit as st
 import zipfile
 import os
-import geopandas as gpd
+import xml.etree.ElementTree as ET
 import pandas as pd
+from shapely.geometry import Point, Polygon, shape
+import shapely.ops
 
 # === KONFIGURASI HALAMAN ===
 st.set_page_config(page_title="KMZ Point to Polygon Processing", layout="centered")
 
 st.title("🗺️ Pemrosesan Spatial Join Point ke Polygon (KMZ)")
 st.write("Unggah file KMZ Anda untuk mendeteksi titik di dalam polygon secara otomatis.")
+
+# === FUNGSI BANTU PARSER KML ===
+def parse_kml_xml(kml_path):
+    polygon_list = []
+    point_list = []
+    polygon_id_counter = 1
+
+    tree = ET.parse(kml_path)
+    root = tree.getroot()
+    
+    # Namespace KML Google Earth
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+
+    # Cari semua Placemark
+    for placemark in root.findall('.//kml:Placemark', ns):
+        name_elem = placemark.find('kml:name', ns)
+        name = name_elem.text.strip() if name_elem is not None and name_elem.text else "Tanpa_Nama"
+        
+        # Cek apakah Polygon
+        polygon_elem = placemark.find('.//kml:Polygon', ns)
+        if polygon_elem is not None:
+            coords_elem = polygon_elem.find('.//kml:coordinates', ns)
+            if coords_elem is not None and coords_elem.text:
+                coords_text = coords_elem.text.strip()
+                coords = []
+                for tuple_str in coords_text.split():
+                    parts = tuple_str.split(',')
+                    if len(parts) >= 2:
+                        coords.append((float(parts[0]), float(parts[1])) )
+                if len(coords) >= 3:
+                    poly = Polygon(coords)
+                    polygon_list.append({
+                        "geometry": poly,
+                        "Polygon_Name": name,
+                        "Polygon_ID": polygon_id_counter,
+                        "FDT": "Area_FDT"
+                    })
+                    polygon_id_counter += 1
+
+        # Cek apakah Point
+        point_elem = placemark.find('.//kml:Point', ns)
+        if point_elem is not None:
+            coords_elem = point_elem.find('.//kml:coordinates', ns)
+            if coords_elem is not None and coords_elem.text:
+                parts = coords_elem.text.strip().split(',')
+                if len(parts) >= 2:
+                    lon, lat = float(parts[0]), float(parts[1])
+                    pt = Point(lon, lat)
+                    point_list.append({
+                        "geometry": pt,
+                        "Latitude": lat,
+                        "Longitude": lon,
+                        "Point_Name": name
+                    })
+
+    return polygon_list, point_list
 
 # === UPLOAD FILE ===
 uploaded_file = st.file_uploader("Pilih file KMZ", type=["kmz"])
@@ -29,44 +87,7 @@ if uploaded_file is not None:
             if not os.path.exists(kml_path):
                 st.error("❌ File 'doc.kml' tidak ditemukan di dalam arsip KMZ.")
             else:
-                polygon_list = []
-                point_list = []
-                polygon_id_counter = 1
-
-                # Membaca layer KML langsung menggunakan GeoPandas
-                import fiona
-                layers = fiona.listlayers(kml_path)
-                st.info(f"Layer ditemukan: {len(layers)} layer")
-
-                for layer in layers:
-                    try:
-                        gdf = gpd.read_file(kml_path, driver="KML", layer=layer)
-                        if gdf.empty:
-                            continue
-
-                        geom_types = gdf.geometry.type.unique()
-                        fdt_name = layer.split(" - ")[0].strip() if " - " in layer else layer
-
-                        if any(t in ['Polygon', 'MultiPolygon'] for t in geom_types):
-                            for _, row in gdf.iterrows():
-                                polygon_list.append({
-                                    "geometry": row.geometry,
-                                    "Polygon_Name": row.get("Name", "Tanpa_Nama"),
-                                    "Polygon_ID": polygon_id_counter,
-                                    "FDT": fdt_name
-                                })
-                                polygon_id_counter += 1
-
-                        elif any(t in ['Point', 'MultiPoint'] for t in geom_types):
-                            for _, row in gdf.iterrows():
-                                point_list.append({
-                                    "geometry": row.geometry,
-                                    "Latitude": row.geometry.y,
-                                    "Longitude": row.geometry.x,
-                                    "Point_Name": row.get("Name", "Tanpa_Nama")
-                                })
-                    except Exception:
-                        continue
+                polygon_list, point_list = parse_kml_xml(kml_path)
 
                 # === VALIDASI DATA ===
                 if not polygon_list:
@@ -74,15 +95,31 @@ if uploaded_file is not None:
                 elif not point_list:
                     st.error("❌ Tidak ditemukan point di file KMZ.")
                 else:
-                    # === Gabungkan dan buat GeoDataFrame ===
-                    polygon_gdf = gpd.GeoDataFrame(polygon_list, geometry="geometry")
-                    point_gdf = gpd.GeoDataFrame(point_list, geometry="geometry", crs=polygon_gdf.crs)
+                    # === Spatial Join Manual dengan Shapely ===
+                    results = []
+                    for pt_data in point_list:
+                        pt_geom = pt_data["geometry"]
+                        matched_poly_name = "-"
+                        matched_poly_id = "-"
+                        fdt_val = "-"
 
-                    # === Spatial Join ===
-                    joined = gpd.sjoin(point_gdf, polygon_gdf, how="left", predicate="within")
+                        for poly_data in polygon_list:
+                            if poly_data["geometry"].contains(pt_geom):
+                                matched_poly_name = poly_data["Polygon_Name"]
+                                matched_poly_id = poly_data["Polygon_ID"]
+                                fdt_val = poly_data["FDT"]
+                                break  # Ambil polygon pertama yang memuat point
 
-                    # === Format Hasil Akhir ===
-                    final_result = joined[["Point_Name", "Latitude", "Longitude", "Polygon_Name", "Polygon_ID", "FDT"]]
+                        results.append({
+                            "Point_Name": pt_data["Point_Name"],
+                            "Latitude": pt_data["Latitude"],
+                            "Longitude": pt_data["Longitude"],
+                            "Polygon_Name": matched_poly_name,
+                            "Polygon_ID": matched_poly_id,
+                            "FDT": fdt_val
+                        })
+
+                    final_result = pd.DataFrame(results)
                     final_result.to_csv(output_csv, index=False)
 
                     st.success("✅ Pemrosesan berhasil dilakukan!")
@@ -97,7 +134,7 @@ if uploaded_file is not None:
                             label="📥 Unduh Hasil CSV",
                             data=f,
                             file_name="hasil_point_polygon.csv",
-                            mime="text/csv"
+                            mime="text/css" if False else "text/csv"
                         )
 
         except Exception as e:

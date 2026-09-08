@@ -25,7 +25,6 @@ def parse_kml_hierarchy(kml_path):
             tag = child.tag.split('}')[-1]
             current_folder = parent_folder
             
-            # Deteksi nama folder/grup
             if tag in ['Folder', 'Document']:
                 name_el = child.find('kml:name', ns)
                 if name_el is not None and name_el.text:
@@ -35,10 +34,8 @@ def parse_kml_hierarchy(kml_path):
                 name_el = child.find('kml:name', ns)
                 placemark_name = name_el.text.strip() if name_el is not None and name_el.text else "Tanpa_Nama"
                 
-                # Ekstrak nama FDT dari nama folder
                 fdt_val = current_folder.split(" - ")[0].strip() if " - " in current_folder else current_folder
 
-                # Cek apakah Polygon
                 polygon_elem = child.find('.//kml:Polygon', ns)
                 if polygon_elem is not None:
                     coords_elem = polygon_elem.find('.//kml:coordinates', ns)
@@ -56,7 +53,6 @@ def parse_kml_hierarchy(kml_path):
                                 "FDT": fdt_val
                             })
 
-                # Cek apakah Point
                 point_elem = child.find('.//kml:Point', ns)
                 if point_elem is not None:
                     coords_elem = point_elem.find('.//kml:coordinates', ns)
@@ -102,14 +98,12 @@ if uploaded_file is not None:
                 elif not point_list:
                     st.error("❌ Tidak ditemukan point di file KMZ.")
                 else:
-                    # Buat ID unik berdasarkan FDT dan Polygon_Name
                     unique_poly_identifiers = sorted(list(set((p["FDT"], p["Polygon_Name"]) for p in polygon_list)))
                     poly_id_map = {identifier: idx + 1 for idx, identifier in enumerate(unique_poly_identifiers)}
 
                     for p in polygon_list:
                         p["Polygon_ID"] = poly_id_map[(p["FDT"], p["Polygon_Name"])]
 
-                    # Spatial Join Manual
                     results = []
                     for pt_data in point_list:
                         pt_geom = pt_data["geometry"]
@@ -135,11 +129,11 @@ if uploaded_file is not None:
 
                     final_result = pd.DataFrame(results)
 
-                    # Urutkan berdasarkan Polygon_ID
                     final_result = final_result.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
-                    final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 9999999 else x)
+                    
+                    # Konversi kolom ID menjadi teks (string) agar baris kosong ("") tidak bentrok dengan tipe integer
+                    final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 9999999 else str(int(x)))
 
-                    # === MENAMBAHKAN KOLOM FORMULA EXCEL KE DETAIL (Kolom A - K) ===
                     g_col, h_col, i_col, j_col, k_col = [], [], [], [], []
                     
                     for idx, row in final_result.iterrows():
@@ -171,11 +165,12 @@ if uploaded_file is not None:
                     detail_df["Col_J"] = j_col
                     detail_df["Col_K"] = k_col
 
-                    # === MENYIAPKAN TABEL RINGKASAN (Mulai Kolom M - P) dengan Nama Unik ===
+                    # Menyiapkan tabel ringkasan (Kolom M - P)
                     valid_data = final_result[final_result["Polygon_ID"] != ""]
                     if not valid_data.empty:
                         summary_df = valid_data.groupby(["Polygon_Name", "Polygon_ID", "FDT"]).size().reset_index(name="Total_HP")
                         summary_df = summary_df.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
+                        summary_df["Polygon_ID"] = summary_df["Polygon_ID"].astype(str)
                     else:
                         summary_df = pd.DataFrame(columns=["Polygon_Name", "Polygon_ID", "FDT", "Total_HP"])
 
@@ -189,32 +184,28 @@ if uploaded_file is not None:
                         pad_sum = pd.DataFrame([[""] * len(summary_df.columns)], columns=summary_df.columns, index=range(max_rows - len(summary_df)))
                         summary_df = pd.concat([summary_df, pad_sum], ignore_index=True)
 
-                    # Gabungkan berdampingan dengan menggunakan nama kolom unik untuk bagian ringkasan
                     combined_df = detail_df.copy()
-                    combined_df["Col_L_Empty"] = ""  # Kolom L (Pembatas)
+                    combined_df["Col_L_Empty"] = "" 
                     combined_df["Summary_Polygon_Name"] = summary_df["Polygon_Name"]
                     combined_df["Summary_Polygon_ID"] = summary_df["Polygon_ID"]
                     combined_df["Summary_FDT"] = summary_df["FDT"]
                     combined_df["Total_HP"] = summary_df["Total_HP"]
 
-                    # Ubah header CSV akhir agar sesuai urutan kolom Excel (A s/d P)
                     combined_df.columns = [
                         "Point_Name", "Latitude", "Longitude", "Polygon_Name", "Polygon_ID", "FDT",
                         "Col_G", "Col_H", "Col_I", "Col_J", "Col_K", 
-                        "", # Kolom L
-                        "Polygon_Name", "Polygon_ID", "FDT", "Total_HP" # Kolom M, N, O, P
+                        "", 
+                        "Polygon_Name", "Polygon_ID", "FDT", "Total_HP"
                     ]
 
-                    # Simpan ke CSV menggunakan header kustom
                     combined_df.to_csv(output_csv, index=False)
 
                     st.success("✅ Pemrosesan berhasil! Tabel detail dan ringkasan kini berada dalam satu file sejajar.")
                     
-                    # Tampilkan pratinjau di web
+                    # Pratinjau web menggunakan argumen width terbaru
                     st.subheader("Pratinjau Hasil Gabungan (Detail A-K & Rekap M-P):")
-                    st.dataframe(combined_df.head(15), use_container_width=True)
+                    st.dataframe(combined_df.head(15), width='stretch')
 
-                    # Tombol Unduh
                     with open(output_csv, "rb") as f:
                         st.download_button(
                             label="📥 Unduh File Hasil (Satu Sheet)",

@@ -114,7 +114,7 @@ if uploaded_file is not None:
                     for pt_data in point_list:
                         pt_geom = pt_data["geometry"]
                         matched_poly_name = "-"
-                        matched_poly_id = 0
+                        matched_poly_id = 9999999  # Gunakan angka besar sementara untuk point yang tidak masuk polygon
                         fdt_val = "-"
 
                         for poly_data in polygon_list:
@@ -129,11 +129,17 @@ if uploaded_file is not None:
                             "Latitude": pt_data["Latitude"],
                             "Longitude": pt_data["Longitude"],
                             "Polygon_Name": matched_poly_name,
-                            "Polygon_ID": matched_poly_id if matched_poly_id != 0 else "",
+                            "Polygon_ID": matched_poly_id,
                             "FDT": fdt_val
                         })
 
                     final_result = pd.DataFrame(results)
+
+                    # === URUTKAN DATA BERDASARKAN Polygon_ID (Smallest to Largest) ===
+                    final_result = final_result.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
+                    
+                    # Ubah kembali angka 9999999 menjadi kosong agar rapi di Excel
+                    final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 9999999 else x)
 
                     # === MENAMBAHKAN KOLOM FORMULA EXCEL ===
                     g_col, h_col, i_col, j_col, k_col = [], [], [], [], []
@@ -168,7 +174,7 @@ if uploaded_file is not None:
 
                     final_result.to_csv(output_csv, index=False)
 
-                    st.success("✅ Pemrosesan berhasil dilakukan dengan urutan ID otomatis dan rumus kolom!")
+                    st.success("✅ Pemrosesan berhasil dilakukan dengan data yang sudah diurutkan berdasarkan Polygon_ID!")
                     
                     st.subheader("Pratinjau Hasil:")
                     st.dataframe(final_result.head(10))

@@ -108,7 +108,7 @@ if uploaded_file is not None:
                     for pt_data in point_list:
                         pt_geom = pt_data["geometry"]
                         matched_poly_name = "-"
-                        matched_poly_id = 9999999
+                        matched_poly_id = 0
                         fdt_val = "-"
 
                         for poly_data in polygon_list:
@@ -131,8 +131,8 @@ if uploaded_file is not None:
 
                     final_result = final_result.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
                     
-                    # Konversi kolom ID menjadi teks (string) agar baris kosong ("") tidak bentrok dengan tipe integer
-                    final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 9999999 else str(int(x)))
+                    # Konversi Polygon_ID dengan aman ke string
+                    final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 0 else str(int(x)))
 
                     g_col, h_col, i_col, j_col, k_col = [], [], [], [], []
                     
@@ -169,7 +169,7 @@ if uploaded_file is not None:
                     valid_data = final_result[final_result["Polygon_ID"] != ""]
                     if not valid_data.empty:
                         summary_df = valid_data.groupby(["Polygon_Name", "Polygon_ID", "FDT"]).size().reset_index(name="Total_HP")
-                        summary_df = summary_df.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
+                        summary_df = summary_df.sort_values(by="Polygon_ID", key=lambda col: col.astype(int), ascending=True).reset_index(drop=True)
                         summary_df["Polygon_ID"] = summary_df["Polygon_ID"].astype(str)
                     else:
                         summary_df = pd.DataFrame(columns=["Polygon_Name", "Polygon_ID", "FDT", "Total_HP"])
@@ -198,13 +198,15 @@ if uploaded_file is not None:
                         "Polygon_Name", "Polygon_ID", "FDT", "Total_HP"
                     ]
 
+                    # Bersihkan format nilai untuk pratinjau yang stabil
+                    preview_df = combined_df.fillna("").astype(str).replace({'nan': '', 'None': ''})
+
                     combined_df.to_csv(output_csv, index=False)
 
                     st.success("✅ Pemrosesan berhasil! Tabel detail dan ringkasan kini berada dalam satu file sejajar.")
                     
-                    # Pratinjau web menggunakan argumen width terbaru
                     st.subheader("Pratinjau Hasil Gabungan (Detail A-K & Rekap M-P):")
-                    st.dataframe(combined_df.head(15), width='stretch')
+                    st.dataframe(preview_df.head(15), width='stretch')
 
                     with open(output_csv, "rb") as f:
                         st.download_button(

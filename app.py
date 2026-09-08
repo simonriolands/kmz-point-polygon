@@ -129,11 +129,9 @@ if uploaded_file is not None:
 
                     final_result = pd.DataFrame(results)
                     final_result = final_result.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
-                    
-                    # Ubah ID menjadi string kosong atau teks angka
                     final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 0 else str(int(x)))
 
-                    # Buat kolom formula Excel
+                    # Buat kolom formula Excel untuk sisi kiri (Kolom G-K)
                     g_col, h_col, i_col, j_col, k_col = [], [], [], [], []
                     for idx, row in final_result.iterrows():
                         excel_row = idx + 2
@@ -164,7 +162,7 @@ if uploaded_file is not None:
                     detail_df["Col_J"] = j_col
                     detail_df["Col_K"] = k_col
 
-                    # Buat tabel ringkasan
+                    # Buat tabel ringkasan dengan nama kolom unik (Summary_) untuk sisi kanan (M-P)
                     valid_data = final_result[final_result["Polygon_ID"] != ""]
                     if not valid_data.empty:
                         summary_df = valid_data.groupby(["Polygon_Name", "Polygon_ID", "FDT"]).size().reset_index(name="Total_HP")
@@ -184,30 +182,23 @@ if uploaded_file is not None:
                         pad_sum = pd.DataFrame([[""] * len(summary_df.columns)], columns=summary_df.columns, index=range(max_rows - len(summary_df)))
                         summary_df = pd.concat([summary_df, pad_sum], ignore_index=True)
 
-                    combined_df = detail_df.copy()
+                    # Gabungkan menggunakan nama kolom unik agar Pandas tidak error
+                    combined_df = detail_df.astype(str).copy()
                     combined_df["Col_L_Empty"] = "" 
-                    combined_df["Summary_Polygon_Name"] = summary_df["Polygon_Name"]
-                    combined_df["Summary_Polygon_ID"] = summary_df["Polygon_ID"]
-                    combined_df["Summary_FDT"] = summary_df["FDT"]
-                    combined_df["Total_HP"] = summary_df["Total_HP"]
+                    combined_df["Summary_Polygon_Name"] = summary_df["Polygon_Name"].astype(str)
+                    combined_df["Summary_Polygon_ID"] = summary_df["Polygon_ID"].astype(str)
+                    combined_df["Summary_FDT"] = summary_df["FDT"].astype(str)
+                    combined_df["Total_HP"] = summary_df["Total_HP"].astype(str)
 
-                    combined_df.columns = [
-                        "Point_Name", "Latitude", "Longitude", "Polygon_Name", "Polygon_ID", "FDT",
-                        "Col_G", "Col_H", "Col_I", "Col_J", "Col_K", 
-                        "", 
-                        "Polygon_Name", "Polygon_ID", "FDT", "Total_HP"
-                    ]
+                    # Bersihkan nilai sisa
+                    combined_df = combined_df.replace({'nan': '', 'None': '', '9999999': ''})
 
-                    # Simpan data ke CSV
                     combined_df.to_csv(output_csv, index=False)
 
                     st.success("✅ Pemrosesan berhasil! Tabel detail dan ringkasan kini berada dalam satu file sejajar.")
                     
-                    # Konversi DataFrame ke tipe string sepenuhnya khusus untuk pratinjau web agar tidak error Arrow
-                    preview_df = combined_df.astype(str).replace({'nan': '', 'None': '', '9999999': ''})
-
                     st.subheader("Pratinjau Hasil Gabungan (Detail A-K & Rekap M-P):")
-                    st.dataframe(preview_df.head(15), width='stretch')
+                    st.dataframe(combined_df.head(15), width='stretch')
 
                     with open(output_csv, "rb") as f:
                         st.download_button(

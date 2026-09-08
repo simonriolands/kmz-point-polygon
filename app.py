@@ -108,7 +108,7 @@ if uploaded_file is not None:
                     for pt_data in point_list:
                         pt_geom = pt_data["geometry"]
                         matched_poly_name = "-"
-                        matched_poly_id = 0
+                        matched_poly_id = 999999  # Gunakan angka besar sementara agar posisi di bawah saat sort
                         fdt_val = "-"
 
                         for poly_data in polygon_list:
@@ -128,8 +128,12 @@ if uploaded_file is not None:
                         })
 
                     final_result = pd.DataFrame(results)
+                    
+                    # Urutkan berdasarkan Polygon_ID saat masih angka (999999 otomatis turun ke bawah)
                     final_result = final_result.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
-                    final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 0 else str(int(x)))
+                    
+                    # Ubah angka 999999 menjadi string kosong ("") setelah pengurutan selesai
+                    final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 999999 else str(int(x)))
 
                     # Buat kolom formula Excel untuk sisi kiri (Kolom G-K)
                     g_col, h_col, i_col, j_col, k_col = [], [], [], [], []
@@ -191,11 +195,11 @@ if uploaded_file is not None:
                     combined_df["Total_HP"] = summary_df["Total_HP"].astype(str)
 
                     # Bersihkan nilai sisa
-                    combined_df = combined_df.replace({'nan': '', 'None': '', '9999999': ''})
+                    combined_df = combined_df.replace({'nan': '', 'None': '', '999999': ''})
 
                     combined_df.to_csv(output_csv, index=False)
 
-                    st.success("✅ Pemrosesan berhasil! Tabel detail dan ringkasan kini berada dalam satu file sejajar.")
+                    st.success("✅ Pemrosesan berhasil! Baris kosong kini berada di bagian bawah.")
                     
                     st.subheader("Pratinjau Hasil Gabungan (Detail A-K & Rekap M-P):")
                     st.dataframe(combined_df.head(15), width='stretch')

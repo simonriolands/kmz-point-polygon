@@ -130,7 +130,7 @@ if uploaded_file is not None:
                     final_result = pd.DataFrame(results)
                     final_result = final_result.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
                     
-                    # Ubah ID menjadi string bersih
+                    # Ubah ID menjadi string kosong atau teks angka
                     final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 0 else str(int(x)))
 
                     # Buat kolom formula Excel
@@ -174,18 +174,14 @@ if uploaded_file is not None:
                     else:
                         summary_df = pd.DataFrame(columns=["Polygon_Name", "Polygon_ID", "FDT", "Total_HP"])
 
-                    # Paksa semua data di frame menjadi string agar aman dari error Arrow
-                    detail_df = detail_df.astype(str)
-                    summary_df = summary_df.astype(str)
-
                     max_rows = max(len(detail_df), len(summary_df))
                     
                     if len(detail_df) < max_rows:
-                        pad = pd.DataFrame([[""] * len(detail_df.columns)], columns=detail_df.columns, index=range(max_rows - len(detail_df))).astype(str)
+                        pad = pd.DataFrame([[""] * len(detail_df.columns)], columns=detail_df.columns, index=range(max_rows - len(detail_df)))
                         detail_df = pd.concat([detail_df, pad], ignore_index=True)
 
                     if len(summary_df) < max_rows:
-                        pad_sum = pd.DataFrame([[""] * len(summary_df.columns)], columns=summary_df.columns, index=range(max_rows - len(summary_df))).astype(str)
+                        pad_sum = pd.DataFrame([[""] * len(summary_df.columns)], columns=summary_df.columns, index=range(max_rows - len(summary_df)))
                         summary_df = pd.concat([summary_df, pad_sum], ignore_index=True)
 
                     combined_df = detail_df.copy()
@@ -202,15 +198,16 @@ if uploaded_file is not None:
                         "Polygon_Name", "Polygon_ID", "FDT", "Total_HP"
                     ]
 
-                    # Bersihkan sisa string 'nan' atau 'None'
-                    combined_df = combined_df.replace({'nan': '', 'None': '', '9999999': ''})
-
+                    # Simpan data ke CSV
                     combined_df.to_csv(output_csv, index=False)
 
                     st.success("✅ Pemrosesan berhasil! Tabel detail dan ringkasan kini berada dalam satu file sejajar.")
                     
+                    # Konversi DataFrame ke tipe string sepenuhnya khusus untuk pratinjau web agar tidak error Arrow
+                    preview_df = combined_df.astype(str).replace({'nan': '', 'None': '', '9999999': ''})
+
                     st.subheader("Pratinjau Hasil Gabungan (Detail A-K & Rekap M-P):")
-                    st.dataframe(combined_df.head(15), width='stretch')
+                    st.dataframe(preview_df.head(15), width='stretch')
 
                     with open(output_csv, "rb") as f:
                         st.download_button(

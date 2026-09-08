@@ -171,7 +171,7 @@ if uploaded_file is not None:
                     detail_df["Col_J"] = j_col
                     detail_df["Col_K"] = k_col
 
-                    # === MENYIAPKAN TABEL RINGKASAN (Mulai Kolom M - P) ===
+                    # === MENYIAPKAN TABEL RINGKASAN (Mulai Kolom M - P) dengan Nama Unik ===
                     valid_data = final_result[final_result["Polygon_ID"] != ""]
                     if not valid_data.empty:
                         summary_df = valid_data.groupby(["Polygon_Name", "Polygon_ID", "FDT"]).size().reset_index(name="Total_HP")
@@ -179,7 +179,6 @@ if uploaded_file is not None:
                     else:
                         summary_df = pd.DataFrame(columns=["Polygon_Name", "Polygon_ID", "FDT", "Total_HP"])
 
-                    # Samakan jumlah baris antara detail dan summary dengan padding kosong
                     max_rows = max(len(detail_df), len(summary_df))
                     
                     if len(detail_df) < max_rows:
@@ -190,15 +189,15 @@ if uploaded_file is not None:
                         pad_sum = pd.DataFrame([[""] * len(summary_df.columns)], columns=summary_df.columns, index=range(max_rows - len(summary_df)))
                         summary_df = pd.concat([summary_df, pad_sum], ignore_index=True)
 
-                    # Gabungkan berdampingan: Detail (A-K) + Kolom Kosong (L) + Summary (M-P)
+                    # Gabungkan berdampingan dengan menggunakan nama kolom unik untuk bagian ringkasan
                     combined_df = detail_df.copy()
-                    combined_df[""] = ""  # Kolom L (Pembatas)
-                    combined_df["Polygon_Name_Summary"] = summary_df["Polygon_Name"]
-                    combined_df["Polygon_ID_Summary"] = summary_df["Polygon_ID"]
-                    combined_df["FDT_Summary"] = summary_df["FDT"]
+                    combined_df["Col_L_Empty"] = ""  # Kolom L (Pembatas)
+                    combined_df["Summary_Polygon_Name"] = summary_df["Polygon_Name"]
+                    combined_df["Summary_Polygon_ID"] = summary_df["Polygon_ID"]
+                    combined_df["Summary_FDT"] = summary_df["FDT"]
                     combined_df["Total_HP"] = summary_df["Total_HP"]
 
-                    # Ubah header akhir agar sesuai dengan struktur kolom Excel (A s/d P)
+                    # Ubah header CSV akhir agar sesuai urutan kolom Excel (A s/d P)
                     combined_df.columns = [
                         "Point_Name", "Latitude", "Longitude", "Polygon_Name", "Polygon_ID", "FDT",
                         "Col_G", "Col_H", "Col_I", "Col_J", "Col_K", 
@@ -206,7 +205,7 @@ if uploaded_file is not None:
                         "Polygon_Name", "Polygon_ID", "FDT", "Total_HP" # Kolom M, N, O, P
                     ]
 
-                    # Simpan ke CSV
+                    # Simpan ke CSV menggunakan header kustom
                     combined_df.to_csv(output_csv, index=False)
 
                     st.success("✅ Pemrosesan berhasil! Tabel detail dan ringkasan kini berada dalam satu file sejajar.")

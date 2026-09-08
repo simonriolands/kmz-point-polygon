@@ -33,31 +33,10 @@ if uploaded_file is not None:
                 point_list = []
                 polygon_id_counter = 1
 
-                # Menggunakan GeoPandas langsung untuk membaca KML tanpa fiona terpisah
-                # GeoPandas menggunakan engine OGR yang membaca semua layer secara otomatis
-                try:
-                    # Mencoba membaca layer default atau iterasi layer menggunakan fiona tidak diperlukan lagi
-                    # Kita bisa membaca langsung file kml menggunakan geopandas
-                    # Karena KML bisa memiliki banyak layer, kita baca secara umum menggunakan driver KML
-                    import fiona.drvsupport
-                    fiona.drvsupport.supported_drivers['KML'] = 'rw'
-                except:
-                    pass
-
-                # Membaca layer yang ada di dalam KML menggunakan fiona internal geopandas
-                from shapely.geometry import shape
-                import xml.etree.ElementTree as ET
-
-                # Pendekatan alternatif langsung dengan GeoPandas membaca file kml
-                # Geopandas read_file dapat membaca file KML langsung
-                # Untuk mendeteksi layer, kita bisa membaca layer 0 atau membaca dengan fiona jika terbawa oleh geopandas dependensi internal
-                
-                # Cara paling aman menggunakan GeoPandas membaca kml langsung:
-                # Mengingat OGR mendukung KML, kita baca langsung path-nya:
-                # Cek layer apa saja yang tersedia melalui geopandas/fiona internal
+                # Membaca layer KML langsung menggunakan GeoPandas
                 import fiona
                 layers = fiona.listlayers(kml_path)
-                st.info(f"Layer/Kategori ditemukan: {len(layers)} layer")
+                st.info(f"Layer ditemukan: {len(layers)} layer")
 
                 for layer in layers:
                     try:

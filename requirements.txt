@@ -1,4 +1,5 @@
 streamlit
 pandas
 shapely
+fiona
 geopandas

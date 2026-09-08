@@ -102,19 +102,19 @@ if uploaded_file is not None:
                 elif not point_list:
                     st.error("❌ Tidak ditemukan point di file KMZ.")
                 else:
-                    # Mengurutkan Polygon_ID secara otomatis (1, 2, 3, dst)
-                    unique_poly_names = sorted(list(set(p["Polygon_Name"] for p in polygon_list)))
-                    poly_id_map = {name: idx + 1 for idx, name in enumerate(unique_poly_names)}
+                    # PERBAIKAN: Buat ID unik berdasarkan gabungan "FDT" dan "Polygon_Name"
+                    unique_poly_identifiers = sorted(list(set((p["FDT"], p["Polygon_Name"]) for p in polygon_list)))
+                    poly_id_map = {identifier: idx + 1 for idx, identifier in enumerate(unique_poly_identifiers)}
 
                     for p in polygon_list:
-                        p["Polygon_ID"] = poly_id_map[p["Polygon_Name"]]
+                        p["Polygon_ID"] = poly_id_map[(p["FDT"], p["Polygon_Name"])]
 
                     # Spatial Join Manual
                     results = []
                     for pt_data in point_list:
                         pt_geom = pt_data["geometry"]
                         matched_poly_name = "-"
-                        matched_poly_id = 9999999  # Gunakan angka besar sementara untuk point yang tidak masuk polygon
+                        matched_poly_id = 9999999  # Dummy angka besar untuk data tak terdefinisi
                         fdt_val = "-"
 
                         for poly_data in polygon_list:
@@ -135,17 +135,17 @@ if uploaded_file is not None:
 
                     final_result = pd.DataFrame(results)
 
-                    # === URUTKAN DATA BERDASARKAN Polygon_ID (Smallest to Largest) ===
+                    # === URUTKAN DATA BERDASARKAN Polygon_ID ===
                     final_result = final_result.sort_values(by="Polygon_ID", ascending=True).reset_index(drop=True)
                     
-                    # Ubah kembali angka 9999999 menjadi kosong agar rapi di Excel
+                    # Ubah angka dummy 9999999 menjadi kosong
                     final_result["Polygon_ID"] = final_result["Polygon_ID"].apply(lambda x: "" if x == 9999999 else x)
 
                     # === MENAMBAHKAN KOLOM FORMULA EXCEL ===
                     g_col, h_col, i_col, j_col, k_col = [], [], [], [], []
                     
                     for idx, row in final_result.iterrows():
-                        excel_row = idx + 2 # Baris 1 adalah header saat dibuka di Excel
+                        excel_row = idx + 2 # Karena baris 1 adalah header Excel
                         prev_row = excel_row - 1
                         next_row = excel_row + 1
 
@@ -174,7 +174,7 @@ if uploaded_file is not None:
 
                     final_result.to_csv(output_csv, index=False)
 
-                    st.success("✅ Pemrosesan berhasil dilakukan dengan data yang sudah diurutkan berdasarkan Polygon_ID!")
+                    st.success("✅ Pemrosesan berhasil! Polygon_ID sekarang berlanjut terus antar folder FDT.")
                     
                     st.subheader("Pratinjau Hasil:")
                     st.dataframe(final_result.head(10))

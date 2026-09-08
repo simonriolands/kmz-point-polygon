@@ -3,8 +3,7 @@ import zipfile
 import os
 import xml.etree.ElementTree as ET
 import pandas as pd
-from shapely.geometry import Point, Polygon, shape
-import shapely.ops
+from shapely.geometry import Point, Polygon
 
 # === KONFIGURASI HALAMAN ===
 st.set_page_config(page_title="KMZ Point to Polygon Processing", layout="centered")
@@ -12,60 +11,77 @@ st.set_page_config(page_title="KMZ Point to Polygon Processing", layout="centere
 st.title("🗺️ Pemrosesan Spatial Join Point ke Polygon (KMZ)")
 st.write("Unggah file KMZ Anda untuk mendeteksi titik di dalam polygon secara otomatis.")
 
-# === FUNGSI BANTU PARSER KML ===
-def parse_kml_xml(kml_path):
+# === FUNGSI BANTU PARSER KML UNTUK MENJEJAK NAMA FOLDER ===
+def parse_kml_hierarchy(kml_path):
     polygon_list = []
     point_list = []
     polygon_id_counter = 1
 
     tree = ET.parse(kml_path)
     root = tree.getroot()
-    
-    # Namespace KML Google Earth
     ns = {'kml': 'http://www.opengis.net/kml/2.2'}
 
-    # Cari semua Placemark
-    for placemark in root.findall('.//kml:Placemark', ns):
-        name_elem = placemark.find('kml:name', ns)
-        name = name_elem.text.strip() if name_elem is not None and name_elem.text else "Tanpa_Nama"
-        
-        # Cek apakah Polygon
-        polygon_elem = placemark.find('.//kml:Polygon', ns)
-        if polygon_elem is not None:
-            coords_elem = polygon_elem.find('.//kml:coordinates', ns)
-            if coords_elem is not None and coords_elem.text:
-                coords_text = coords_elem.text.strip()
-                coords = []
-                for tuple_str in coords_text.split():
-                    parts = tuple_str.split(',')
-                    if len(parts) >= 2:
-                        coords.append((float(parts[0]), float(parts[1])) )
-                if len(coords) >= 3:
-                    poly = Polygon(coords)
-                    polygon_list.append({
-                        "geometry": poly,
-                        "Polygon_Name": name,
-                        "Polygon_ID": polygon_id_counter,
-                        "FDT": "Area_FDT"
-                    })
-                    polygon_id_counter += 1
+    # Fungsi rekursif untuk mendeteksi nama folder aktif di setiap level hierarki
+    def walk_nodes(node, parent_folder="Tanpa_Folder"):
+        nonlocal polygon_id_counter
 
-        # Cek apakah Point
-        point_elem = placemark.find('.//kml:Point', ns)
-        if point_elem is not None:
-            coords_elem = point_elem.find('.//kml:coordinates', ns)
-            if coords_elem is not None and coords_elem.text:
-                parts = coords_elem.text.strip().split(',')
-                if len(parts) >= 2:
-                    lon, lat = float(parts[0]), float(parts[1])
-                    pt = Point(lon, lat)
-                    point_list.append({
-                        "geometry": pt,
-                        "Latitude": lat,
-                        "Longitude": lon,
-                        "Point_Name": name
-                    })
+        for child in node:
+            tag = child.tag.split('}')[-1]
+            
+            # Tentukan nama folder saat ini jika elemen adalah Folder atau Document
+            current_folder = parent_folder
+            if tag in ['Folder', 'Document']:
+                name_el = child.find('kml:name', ns)
+                if name_el is not None and name_el.text:
+                    current_folder = name_el.text.strip()
 
+            if tag == 'Placemark':
+                name_el = child.find('kml:name', ns)
+                placemark_name = name_el.text.strip() if name_el is not None and name_el.text else "Tanpa_Nama"
+                
+                # Ekstrak FDT dari nama folder (misal: "FDT-01 - Area A" -> "FDT-01")[cite: 1]
+                fdt_val = current_folder.split(" - ")[0].strip() if " - " in current_folder else current_folder
+
+                # Cek apakah Polygon
+                polygon_elem = child.find('.//kml:Polygon', ns)
+                if polygon_elem is not None:
+                    coords_elem = polygon_elem.find('.//kml:coordinates', ns)
+                    if coords_elem is not None and coords_elem.text:
+                        coords = []
+                        for tuple_str in coords_elem.text.strip().split():
+                            parts = tuple_str.split(',')
+                            if len(parts) >= 2:
+                                coords.append((float(parts[0]), float(parts[1])))
+                        if len(coords) >= 3:
+                            poly = Polygon(coords)
+                            polygon_list.append({
+                                "geometry": poly,
+                                "Polygon_Name": placemark_name,
+                                "Polygon_ID": polygon_id_counter,
+                                "FDT": fdt_val
+                            })
+                            polygon_id_counter += 1
+
+                # Cek apakah Point
+                point_elem = child.find('.//kml:Point', ns)
+                if point_elem is not None:
+                    coords_elem = point_elem.find('.//kml:coordinates', ns)
+                    if coords_elem is not None and coords_elem.text:
+                        parts = coords_elem.text.strip().split(',')
+                        if len(parts) >= 2:
+                            lon, lat = float(parts[0]), float(parts[1])
+                            pt = Point(lon, lat)
+                            point_list.append({
+                                "geometry": pt,
+                                "Latitude": lat,
+                                "Longitude": lon,
+                                "Point_Name": placemark_name
+                            })
+
+            # Lanjutkan penelusuran ke dalam node anak
+            walk_nodes(child, current_folder)
+
+    walk_nodes(root)
     return polygon_list, point_list
 
 # === UPLOAD FILE ===
@@ -87,7 +103,7 @@ if uploaded_file is not None:
             if not os.path.exists(kml_path):
                 st.error("❌ File 'doc.kml' tidak ditemukan di dalam arsip KMZ.")
             else:
-                polygon_list, point_list = parse_kml_xml(kml_path)
+                polygon_list, point_list = parse_kml_hierarchy(kml_path)
 
                 # === VALIDASI DATA ===
                 if not polygon_list:
@@ -108,7 +124,7 @@ if uploaded_file is not None:
                                 matched_poly_name = poly_data["Polygon_Name"]
                                 matched_poly_id = poly_data["Polygon_ID"]
                                 fdt_val = poly_data["FDT"]
-                                break  # Ambil polygon pertama yang memuat point
+                                break
 
                         results.append({
                             "Point_Name": pt_data["Point_Name"],
@@ -134,7 +150,7 @@ if uploaded_file is not None:
                             label="📥 Unduh Hasil CSV",
                             data=f,
                             file_name="hasil_point_polygon.csv",
-                            mime="text/css" if False else "text/csv"
+                            mime="text/csv"
                         )
 
         except Exception as e:
